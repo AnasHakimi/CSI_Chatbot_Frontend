@@ -68,25 +68,48 @@ async function sendMessage() {
       role: "assistant",
       content: (
         <div className="ai-response">
-          {/* Plain text answer */}
-          <p>{res.answer}</p>
+          {/* Text Answer */}
+          {res.answer && (
+            <p className="answer-text">{res.answer}</p>
+          )}
 
-          {/* Chart visualization */}
+          {/* Chart Visualization */}
           {res.chart && (
-            <img
-              src={`data:image/png;base64,${res.chart}`}
-              alt="Visualization"
-              className="chart-image"
-            />
+            <div className="chart-wrapper">
+              <img
+                src={`data:image/png;base64,${res.chart}`}
+                alt="Visualization"
+                className="chart-image"
+                style={{
+                  maxWidth: "100%",
+                  borderRadius: "10px",
+                  marginTop: "1rem",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                }}
+              />
+            </div>
           )}
 
-          {/* Table output */}
-          {res.table && (
-            <pre className="table-output">{res.table}</pre>
-          )}
-        </div>
-      ),
-    };
+      {/* Table Output */}
+      {res.table && (
+        <pre
+          className="table-output"
+          style={{
+            background: "rgb(36 36 36)",
+            padding: "1rem",
+            borderRadius: "8px",
+            overflowX: "auto",
+            marginTop: "1rem",
+            fontFamily: "monospace",
+          }}
+        >
+          {res.table}
+        </pre>
+      )}
+    </div>
+  ),
+};
+
 
 
     const updatedMessages = [...newMessages, aiMsg];

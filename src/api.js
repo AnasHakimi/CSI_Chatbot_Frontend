@@ -6,6 +6,19 @@ const api = axios.create({
 
 export async function askPowerBI(question) {
   const { data } = await api.post("/ask", { question });
-  return data; 
-  // The backend returns: { generated_code, result, summary, chart_base64 }
+
+  // Normalize backend structure
+  return {
+    type: data.type,
+    answer:
+      data.type === "text"
+        ? data.data
+        : data.type === "table"
+        ? "Here’s the table result:"
+        : data.type === "chart"
+        ? "Here’s the chart result:"
+        : "Response received",
+    chart: data.type === "chart" ? data.data : null,
+    table: data.type === "table" ? data.data : null,
+  };
 }

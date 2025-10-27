@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { FiPlus, FiChevronLeft, FiMessageSquare } from "react-icons/fi";
 import { askPowerBI } from "./api";
 import ChatMessage from "./components/ChatMessage";
 import Loader from "./components/Loader";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
+import LZString from "lz-string";       // 🧩 for compression
 import "./App.css";
 
 export default function App() {
@@ -25,13 +25,40 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
-  
-
   // Load messages when active chat changes
   useEffect(() => {
     const chat = chats.find((c) => c.id === activeChatId);
     if (chat) setMessages(chat.messages);
   }, [activeChatId]);
+
+  // ---- Helpers ----
+  function saveChatsToStorage(updatedChats) {
+    setChats(updatedChats);
+    localStorage.setItem("pbi_chats", JSON.stringify(updatedChats));
+  }
+
+  function getActiveChat() {
+    return chats.find((c) => c.id === activeChatId);
+  }
+
+  function updateChatMessages(newMessages) {
+    if (!activeChatId) return; // avoid saving if chat not yet selected
+
+    setChats((prevChats) => {
+      const updated = prevChats.map((chat) =>
+        chat.id === activeChatId ? { ...chat, messages: newMessages } : chat
+      );
+      localStorage.setItem("pbi_chats", JSON.stringify(updated));
+      return updated;
+    });
+  }
+
+  function renameChat(firstMessage) {
+    const updated = chats.map((c) =>
+      c.id === activeChatId ? { ...c, title: firstMessage.slice(0, 25) + "..." } : c
+    );
+    saveChatsToStorage(updated);
+  }
 
   function createNewChat() {
     const newChat = {
@@ -39,119 +66,61 @@ export default function App() {
       title: "New Chat",
       messages: [{ role: "assistant", content: "👋 New chat started! Ask your questions." }],
     };
-    saveChatsToStorage([...chats, newChat]);   //instead of setChats
+    saveChatsToStorage([...chats, newChat]);
     setActiveChatId(newChat.id);
     setMessages(newChat.messages);
   }
 
-  // Helper function to update localStorage immediately whenever chats change
-  function saveChatsToStorage(updatedChats) {
-    setChats(updatedChats);
-    localStorage.setItem("pbi_chats", JSON.stringify(updatedChats));
-  }
+  // ---- Main sendMessage ----
+  async function sendMessage() {
+    if (!input.trim()) return;
 
-async function sendMessage() {
-  if (!input.trim()) return;
+    const userMsg = { role: "user", content: input };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    updateChatMessages(newMessages);
+    setInput("");
+    setLoading(true);
 
-  const userMsg = { role: "user", content: input };
-  const newMessages = [...messages, userMsg];
-  setMessages(newMessages);
-  updateChatMessages(newMessages);
+    try {
+      const res = await askPowerBI(userMsg.content);
 
-  setInput("");
-  setLoading(true);
+      // 🧩 Compress chart before saving
+      const aiMsg = {
+        role: "assistant",
+        content: {
+          answer: res.answer || null,
+          chart: res.chart ? LZString.compressToBase64(res.chart) : null,
+          table: res.table || null,
+        },
+      };
 
-  try {
-    const res = await askPowerBI(userMsg.content);
+      const updatedMessages = [...newMessages, aiMsg];
+      setMessages(updatedMessages);
+      updateChatMessages(updatedMessages);
 
-    const aiMsg = {
-      role: "assistant",
-      content: (
-        <div className="ai-response">
-          {/* Text Answer */}
-          {res.answer && (
-            <p className="answer-text">{res.answer}</p>
-          )}
-
-          {/* Chart Visualization */}
-          {res.chart && (
-            <div className="chart-wrapper">
-              <img
-                src={`data:image/png;base64,${res.chart}`}
-                alt="Visualization"
-                className="chart-image"
-                style={{
-                  maxWidth: "100%",
-                  borderRadius: "10px",
-                  marginTop: "1rem",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                }}
-              />
-            </div>
-          )}
-
-      {/* Table Output */}
-      {res.table && (
-        <pre
-          className="table-output"
-          style={{
-            background: "rgb(36 36 36)",
-            padding: "1rem",
-            borderRadius: "8px",
-            overflowX: "auto",
-            marginTop: "1rem",
-            fontFamily: "monospace",
-          }}
-        >
-          {res.table}
-        </pre>
-      )}
-    </div>
-  ),
-};
-
-
-
-    const updatedMessages = [...newMessages, aiMsg];
-    setMessages(updatedMessages);
-    updateChatMessages(updatedMessages);
-
-    // Update chat title (first user question)
-    if (!getActiveChat().title || getActiveChat().title === "New Chat") {
-      renameChat(userMsg.content);
+      const currentChat = getActiveChat();
+      if (!currentChat.title || currentChat.title === "New Chat") {
+        renameChat(userMsg.content);
+      }
+    } catch (err) {
+      const errorMsg = {
+        role: "assistant",
+        content: {
+          answer: "⚠️ " + (err.message || "Error retrieving data."),
+          chart: null,
+          table: null,
+        },
+      };
+      const updatedMessages = [...newMessages, errorMsg];
+      setMessages(updatedMessages);
+      updateChatMessages(updatedMessages);
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    const errorMsg = {
-      role: "assistant",
-      content: "⚠️ " + (err.message || "Error retrieving data."),
-    };
-    const updatedMessages = [...newMessages, errorMsg];
-    setMessages(updatedMessages);
-    updateChatMessages(updatedMessages);
-  } finally {
-    setLoading(false);
-  }
-}
-
-
-  function updateChatMessages(newMessages) {
-    const updated = chats.map((chat) =>
-      chat.id === activeChatId ? { ...chat, messages: newMessages } : chat
-    );
-    saveChatsToStorage(updated);  
   }
 
-  function getActiveChat() {
-    return chats.find((c) => c.id === activeChatId);
-  }
-
-  function renameChat(firstMessage) {
-    const updated = chats.map((c) =>
-      c.id === activeChatId ? { ...c, title: firstMessage.slice(0, 25) + "..." } : c
-    );
-    saveChatsToStorage(updated);  
-  }
-
+  // ---- Handle keyboard ----
   function handleKey(e) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -159,27 +128,25 @@ async function sendMessage() {
     }
   }
 
-  // On first load
+  // ---- First load ----
   useEffect(() => {
-    if (chats.length === 0) {
-      createNewChat();
-    } else if (!activeChatId) {
-      setActiveChatId(chats[0].id);
-    }
+    if (chats.length === 0) createNewChat();
+    else if (!activeChatId) setActiveChatId(chats[0].id);
   }, []);
 
+  // ---- Render ----
   return (
     <div className={`app-container ${darkMode ? "dark" : ""}`}>
       <Sidebar
-         open={sidebarOpen}
-         setOpen={setSidebarOpen}
-         chats={chats}
-         activeChatId={activeChatId}
-         setActiveChatId={setActiveChatId}
-         createNewChat={createNewChat}
-         setChats={setChats}
-         saveChatsToStorage={saveChatsToStorage}
-         darkMode={darkMode}
+        open={sidebarOpen}
+        setOpen={setSidebarOpen}
+        chats={chats}
+        activeChatId={activeChatId}
+        setActiveChatId={setActiveChatId}
+        createNewChat={createNewChat}
+        setChats={setChats}
+        saveChatsToStorage={saveChatsToStorage}
+        darkMode={darkMode}
       />
 
       <div className="main-chat">
@@ -193,7 +160,45 @@ async function sendMessage() {
         <div className="chat-body">
           {messages.map((msg, i) => (
             <ChatMessage key={i} role={msg.role}>
-              {msg.content}
+              {typeof msg.content === "string" ? (
+                msg.content
+              ) : (
+                <div className="ai-response">
+                  {msg.content.answer && (
+                    <p className="answer-text">{msg.content.answer}</p>
+                  )}
+                  {msg.content.chart && (
+                    <div className="chart-wrapper">
+                      <img
+                        src={`data:image/png;base64,${LZString.decompressFromBase64(msg.content.chart)}`}
+                        alt="Visualization"
+                        className="chart-image"
+                        style={{
+                          maxWidth: "100%",
+                          borderRadius: "10px",
+                          marginTop: "1rem",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                        }}
+                      />
+                    </div>
+                  )}
+                  {msg.content.table && (
+                    <pre
+                      className="table-output"
+                      style={{
+                        background: "rgb(36 36 36)",
+                        padding: "1rem",
+                        borderRadius: "8px",
+                        overflowX: "auto",
+                        marginTop: "1rem",
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      {msg.content.table}
+                    </pre>
+                  )}
+                </div>
+              )}
             </ChatMessage>
           ))}
           {loading && <Loader />}

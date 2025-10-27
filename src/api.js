@@ -7,18 +7,18 @@ const api = axios.create({
 export async function askPowerBI(question) {
   const { data } = await api.post("/ask", { question });
 
-  // Normalize backend structure
+  // Normalize backend response for React
   return {
-    type: data.type,
+    type: data.type || (data.chart ? "chart" : "text"),
     answer:
-      data.type === "text"
-        ? data.data
+      data.type === "text" || (!data.type && !data.chart)
+        ? data.answer || data.data || "No answer provided."
         : data.type === "table"
         ? "Here’s the table result:"
-        : data.type === "chart"
+        : data.type === "chart" || data.chart
         ? "Here’s the chart result:"
-        : "Response received",
-    chart: data.type === "chart" ? data.data : null,
-    table: data.type === "table" ? data.data : null,
+        : "Response received.",
+    chart: data.chart || (data.type === "chart" ? data.data : null) || null,
+    table: data.table || (data.type === "table" ? data.data : null) || null,
   };
 }
